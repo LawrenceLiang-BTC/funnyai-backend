@@ -17,6 +17,7 @@ const (
 	MoltbookAPI = "https://www.moltbook.com/api/v1"
 	MoltbookKey = "moltbook_sk_5bfNNlH2QLJb6itaC3auE9Wr9YyBXQVf"
 	FunnyAIAPI  = "http://localhost:8080/api/v1"
+	BatchSize   = 100
 
 	// 质量筛选阈值
 	MinUpvotes  = 5
@@ -73,102 +74,170 @@ type MoltbookPost struct {
 }
 
 type MoltbookResponse struct {
-	Posts []MoltbookPost `json:"posts"`
+	Posts   []MoltbookPost `json:"posts"`
+	HasMore bool           `json:"has_more"`
 }
 
 func main() {
 	fmt.Printf("[%s] Starting incremental Moltbook sync...\n", time.Now().Format("2006-01-02 15:04:05"))
-
-	req, _ := http.NewRequest("GET", MoltbookAPI+"/posts?sort=new&limit=50", nil)
-	req.Header.Set("Authorization", "Bearer "+MoltbookKey)
+	fmt.Println("Strategy: Paginate through new posts until we hit existing ones")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Failed to fetch posts:", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	var data MoltbookResponse
-	json.NewDecoder(resp.Body).Decode(&data)
-	fmt.Printf("Fetched %d posts from Moltbook\n", len(data.Posts))
-
+	
 	synced := 0
 	skippedQuality := 0
 	skippedLength := 0
+	duplicateStreak := 0  // 连续遇到重复帖子的次数
+	maxDuplicateStreak := 10  // 连续 10 条重复就停止
+	
+	// 分页拉取，直到遇到已存在的帖子
+	for offset := 0; offset < 5000; offset += BatchSize {
+		url := fmt.Sprintf("%s/posts?sort=new&limit=%d&offset=%d", MoltbookAPI, BatchSize, offset)
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Authorization", "Bearer "+MoltbookKey)
 
-	for _, post := range data.Posts {
-		// 1. 质量筛选
-		if post.Upvotes < MinUpvotes && post.CommentCount < MinComments {
-			skippedQuality++
-			continue
-		}
-
-		// 2. 准备内容
-		content := post.Content
-		if content == "" {
-			content = post.Title
-		}
-		if content == "" {
-			continue
-		}
-
-		// 3. 长度筛选
-		if utf8.RuneCountInString(content) > MaxLength {
-			skippedLength++
-			continue
-		}
-
-		// 4. 创建 Agent
-		createAgent(post.Author.Name)
-
-		// 5. 分类
-		category := classifyPost(post.Submolt.Name, content)
-
-		// 6. 创建帖子
-		postData := map[string]interface{}{
-			"postId":        "moltbook-" + post.ID,
-			"content":       content,
-			"category":      category,
-			"agentUsername": post.Author.Name,
-			"likesCount":    post.Upvotes,
-			"commentsCount": post.CommentCount,
-			"moltbookUrl":   fmt.Sprintf("https://www.moltbook.com/post/%s", post.ID),
-			"postedAt":      post.CreatedAt.Format(time.RFC3339),
-		}
-		jsonData, _ := json.Marshal(postData)
-
-		postResp, err := http.Post(FunnyAIAPI+"/admin/posts", "application/json", strings.NewReader(string(jsonData)))
+		resp, err := client.Do(req)
 		if err != nil {
-			continue
+			fmt.Printf("Failed to fetch posts at offset %d: %v\n", offset, err)
+			break
 		}
-		respBody, _ := io.ReadAll(postResp.Body)
-		postResp.Body.Close()
 
-		if strings.Contains(string(respBody), `"post"`) && !strings.Contains(string(respBody), "already exists") {
-			short := content
-			if len(short) > 40 {
-				short = short[:40]
-			}
-			fmt.Printf("  Synced: %s...\n", short)
-			synced++
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		var data MoltbookResponse
+		if err := json.Unmarshal(body, &data); err != nil {
+			fmt.Printf("Failed to parse response: %v\n", err)
+			break
 		}
+
+		if len(data.Posts) == 0 {
+			fmt.Println("No more posts")
+			break
+		}
+
+		fmt.Printf("Processing offset %d, got %d posts...\n", offset, len(data.Posts))
+
+		batchSynced := 0
+		batchDuplicates := 0
+
+		for _, post := range data.Posts {
+			// 检查是否已存在
+			postId := "moltbook-" + post.ID
+			if postExists(client, postId) {
+				duplicateStreak++
+				batchDuplicates++
+				if duplicateStreak >= maxDuplicateStreak {
+					fmt.Printf("  Hit %d consecutive duplicates, stopping\n", maxDuplicateStreak)
+					goto done
+				}
+				continue
+			}
+			
+			// 遇到新帖子，重置连续重复计数
+			duplicateStreak = 0
+
+			// 1. 质量筛选
+			if post.Upvotes < MinUpvotes && post.CommentCount < MinComments {
+				skippedQuality++
+				continue
+			}
+
+			// 2. 准备内容
+			content := post.Content
+			if content == "" {
+				content = post.Title
+			}
+			if content == "" {
+				continue
+			}
+
+			// 3. 长度筛选
+			if utf8.RuneCountInString(content) > MaxLength {
+				skippedLength++
+				continue
+			}
+
+			// 4. 创建 Agent
+			createAgent(client, post.Author.Name)
+
+			// 5. 分类
+			category := classifyPost(post.Submolt.Name, content)
+
+			// 6. 创建帖子
+			postData := map[string]interface{}{
+				"postId":        postId,
+				"content":       content,
+				"category":      category,
+				"agentUsername": post.Author.Name,
+				"likesCount":    post.Upvotes,
+				"commentsCount": post.CommentCount,
+				"moltbookUrl":   fmt.Sprintf("https://www.moltbook.com/post/%s", post.ID),
+				"postedAt":      post.CreatedAt.Format(time.RFC3339),
+			}
+			jsonData, _ := json.Marshal(postData)
+
+			postResp, err := http.Post(FunnyAIAPI+"/admin/posts", "application/json", strings.NewReader(string(jsonData)))
+			if err != nil {
+				continue
+			}
+			respBody, _ := io.ReadAll(postResp.Body)
+			postResp.Body.Close()
+
+			if strings.Contains(string(respBody), `"post"`) && !strings.Contains(string(respBody), "already exists") {
+				short := content
+				if len(short) > 40 {
+					short = short[:40]
+				}
+				fmt.Printf("  Synced: %s...\n", short)
+				batchSynced++
+				synced++
+			}
+		}
+
+		fmt.Printf("  Batch result: synced=%d, duplicates=%d\n", batchSynced, batchDuplicates)
+
+		// 如果整个批次都是重复的，可能已经同步完了
+		if batchDuplicates == len(data.Posts) {
+			fmt.Println("  Entire batch was duplicates, stopping")
+			break
+		}
+
+		// 如果没有更多数据
+		if !data.HasMore {
+			fmt.Println("  No more posts from API")
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
 	}
 
-	fmt.Printf("\n[%s] Sync complete!\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Printf("  Synced: %d | Skipped (quality): %d | Skipped (length): %d\n", synced, skippedQuality, skippedLength)
+done:
+	fmt.Printf("\n[%s] Incremental sync complete!\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("  New posts synced:      %d\n", synced)
+	fmt.Printf("  Skipped (low quality): %d\n", skippedQuality)
+	fmt.Printf("  Skipped (too long):    %d\n", skippedLength)
+}
+
+// postExists 检查帖子是否已存在
+func postExists(client *http.Client, postId string) bool {
+	resp, err := client.Get(FunnyAIAPI + "/posts/" + postId)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	
+	// 200 表示存在，404 表示不存在
+	return resp.StatusCode == 200
 }
 
 func classifyPost(submoltName, content string) string {
-	// 1. submolt 映射
 	if submoltName != "" {
 		if cat, ok := submoltToCategory[strings.ToLower(submoltName)]; ok {
 			return cat
 		}
 	}
 
-	// 2. 关键词匹配
 	contentLower := strings.ToLower(content)
 	for category, keywords := range keywordRules {
 		for _, kw := range keywords {
@@ -178,7 +247,6 @@ func classifyPost(submoltName, content string) string {
 		}
 	}
 
-	// 3. AI 分类
 	if OpenAIKey != "" {
 		if cat := classifyByAI(content); cat != "" {
 			return cat
@@ -240,12 +308,12 @@ Category:`, content)
 	return ""
 }
 
-func createAgent(name string) {
+func createAgent(client *http.Client, name string) {
 	if name == "" {
 		return
 	}
 
-	resp, err := http.Get(FunnyAIAPI + "/agents/" + name)
+	resp, err := client.Get(FunnyAIAPI + "/agents/" + name)
 	if err != nil {
 		return
 	}
