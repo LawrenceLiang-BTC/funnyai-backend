@@ -10,17 +10,10 @@ import (
 )
 
 func main() {
-	// 加载配置
 	cfg := config.Load()
+	db := database.Connect(cfg)
 
-	// 初始化数据库
-	db, err := database.Init(cfg.DatabaseURL)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	// 启动服务器
-	r := router.Setup(db, cfg)
+	r := router.SetupRouter(db, cfg)
 
 	port := os.Getenv("PORT")
 	if port == "" {

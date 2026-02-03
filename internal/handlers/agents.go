@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 	"strconv"
 
@@ -34,7 +32,7 @@ func (h *Handler) GetAgent(c *gin.Context) {
 	}
 
 	var posts []models.Post
-	h.DB.Preload("Images").Preload("Video").
+	h.DB.Preload("Images").Preload("Videos").
 		Where("agent_id = ?", agent.ID).
 		Order("hotness_score DESC").
 		Find(&posts)
@@ -60,53 +58,6 @@ func (h *Handler) SearchAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"agents": agents, "query": query})
 }
 
-// ApplyAgent - Agent 注册申请
-func (h *Handler) ApplyAgent(c *gin.Context) {
-	var req struct {
-		Username   string `json:"username" binding:"required,min=2,max=30"`
-		Bio        string `json:"bio" binding:"max=200"`
-		TwitterURL string `json:"twitterUrl" binding:"required"` // 用于验证
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 检查用户名是否已存在
-	var existing models.Agent
-	if err := h.DB.Where("username = ?", req.Username).First(&existing).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
-		return
-	}
-
-	// 检查是否有待审核的申请
-	var pendingApp models.AgentApplication
-	if err := h.DB.Where("username = ? AND status = ?", req.Username, "pending").First(&pendingApp).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Application already pending", "applicationId": pendingApp.ID})
-		return
-	}
-
-	// 创建申请
-	app := models.AgentApplication{
-		Username:   req.Username,
-		Bio:        req.Bio,
-		TwitterURL: req.TwitterURL,
-		Status:     "pending",
-	}
-
-	if err := h.DB.Create(&app).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create application"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"applicationId": app.ID,
-		"status":        app.Status,
-		"message":       "Application submitted. Please post a verification tweet.",
-	})
-}
-
 // GetApplicationStatus - 查询申请状态
 func (h *Handler) GetApplicationStatus(c *gin.Context) {
 	id := c.Param("id")
@@ -120,39 +71,54 @@ func (h *Handler) GetApplicationStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"application": app})
 }
 
-// generateAPIKey - 生成 API Key
-func generateAPIKey() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return "fai_" + hex.EncodeToString(bytes)
+// GetAgentMe - Agent 获取自己的信息
+func (h *Handler) GetAgentMe(c *gin.Context) {
+	agentID := c.GetUint("agentID")
+	
+	var agent models.Agent
+	if err := h.DB.First(&agent, agentID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"agent": agent})
 }
 
-// ApproveAgent - 审核通过（内部调用）
-func (h *Handler) ApproveAgent(appID uint) (*models.Agent, error) {
-	var app models.AgentApplication
-	if err := h.DB.First(&app, appID).Error; err != nil {
-		return nil, err
+// UpdateAgentProfile - Agent 更新自己的资料
+func (h *Handler) UpdateAgentProfile(c *gin.Context) {
+	agentID := c.GetUint("agentID")
+	
+	var req struct {
+		Bio       string `json:"bio" binding:"max=200"`
+		AvatarURL string `json:"avatarUrl" binding:"max=500"`
 	}
-
-	// 生成 API Key
-	apiKey := generateAPIKey()
-
-	// 创建 Agent
-	agent := models.Agent{
-		Username:   app.Username,
-		Bio:        app.Bio,
-		APIKey:     apiKey,
-		IsApproved: true,
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-
-	if err := h.DB.Create(&agent).Error; err != nil {
-		return nil, err
+	
+	updates := map[string]interface{}{}
+	if req.Bio != "" {
+		updates["bio"] = req.Bio
 	}
+	if req.AvatarURL != "" {
+		updates["avatar_url"] = req.AvatarURL
+	}
+	
+	if len(updates) > 0 {
+		h.DB.Model(&models.Agent{}).Where("id = ?", agentID).Updates(updates)
+	}
+	
+	var agent models.Agent
+	h.DB.First(&agent, agentID)
+	
+	c.JSON(http.StatusOK, gin.H{"agent": agent})
+}
 
-	// 更新申请状态
-	h.DB.Model(&app).Updates(map[string]interface{}{
-		"status": "approved",
-	})
-
-	return &agent, nil
+// AdminGetAgents - 管理员获取所有 Agent
+func (h *Handler) AdminGetAgents(c *gin.Context) {
+	var agents []models.Agent
+	h.DB.Order("created_at DESC").Find(&agents)
+	c.JSON(http.StatusOK, gin.H{"agents": agents})
 }

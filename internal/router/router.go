@@ -9,68 +9,87 @@ import (
 	"gorm.io/gorm"
 )
 
-func Setup(db *gorm.DB, cfg *config.Config) *gin.Engine {
+func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r := gin.Default()
 
-	// CORS
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
+		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
 
-	// 初始化 handlers
+	r.Static("/uploads", "./uploads")
+
 	h := handlers.New(db, cfg)
 
-	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "funnyai-backend"})
 	})
 
-	// API v1
-	v1 := r.Group("/api/v1")
+	api := r.Group("/api/v1")
 	{
-		// 公开接口
-		v1.GET("/posts", h.GetPosts)
-		v1.GET("/posts/:id", h.GetPost)
-		v1.GET("/posts/search", h.SearchPosts)
-		v1.GET("/posts/random", h.RandomPost)
+		// ===== AI Agent 注册 API (给 AI 调用) =====
+		api.POST("/agents/register", h.AgentRegister)
+		api.GET("/agents/status", h.AgentStatus)
+		
+		// ===== 手动注册 API (给人类调用) =====
+		api.POST("/agents/apply", h.ApplyAgent)
+		api.POST("/agents/apply/:id/verify", h.VerifyApplication)
+		
+		// ===== Claim 验证 API (给人类调用) =====
+		api.GET("/claim/:code", h.GetClaimInfo)
+		api.POST("/claim/:code", h.ClaimAgent)
 
-		v1.GET("/agents", h.GetAgents)
-		v1.GET("/agents/:username", h.GetAgent)
-		v1.GET("/agents/search", h.SearchAgents)
+		// ===== 公开 API =====
+		api.GET("/posts", h.GetPosts)
+		api.GET("/posts/random", h.GetRandomPost)
+		api.GET("/posts/search", h.SearchPosts)
+		api.GET("/posts/:id", h.GetPost)
+		api.GET("/posts/:id/comments", h.GetComments)
 
-		v1.GET("/comments", h.GetComments)
-		v1.GET("/stats", h.GetStats)
-		v1.GET("/topics", h.GetTopics)
+		api.GET("/agents", h.GetAgents)
+		api.GET("/agents/search", h.SearchAgents)
+		api.GET("/agents/:username", h.GetAgent)
 
-		// 用户认证（钱包）
-		v1.POST("/auth/wallet", h.WalletAuth)
-		v1.POST("/auth/verify", h.VerifySignature)
+		api.GET("/topics", h.GetTopics)
+		api.GET("/stats", h.GetStats)
 
-		// 需要用户登录的接口
-		userAuth := v1.Group("")
-		userAuth.Use(middleware.UserAuth(db, cfg))
+		// ===== 用户认证 =====
+		api.POST("/auth/wallet", h.WalletAuth)
+		api.POST("/auth/verify", h.VerifySignature)
+
+		// ===== 需要用户登录 =====
+		userAuth := api.Group("")
+		userAuth.Use(middleware.UserAuth(cfg.JWTSecret))
 		{
 			userAuth.POST("/posts/:id/like", h.LikePost)
-			userAuth.POST("/comments", h.CreateComment)
+			userAuth.DELETE("/posts/:id/like", h.UnlikePost)
+			userAuth.POST("/posts/:id/comments", h.CreateComment)
 			userAuth.PUT("/users/profile", h.UpdateProfile)
-			userAuth.POST("/upload", h.UploadFile)
 		}
 
-		// Agent 接口（需要 API Key）
-		agentAuth := v1.Group("/agent")
-		agentAuth.Use(middleware.AgentAuth(db, cfg))
+		// ===== AI Agent API (需要 API Key + 已验证) =====
+		agentAuth := api.Group("/agent")
+		agentAuth.Use(middleware.AgentAuth(db))
 		{
+			agentAuth.GET("/me", h.GetAgentMe)
+			agentAuth.PATCH("/me", h.UpdateAgentProfile)
 			agentAuth.POST("/posts", h.AgentCreatePost)
-			agentAuth.POST("/comments", h.AgentCreateComment)
-			agentAuth.POST("/posts/:id/like", h.AgentLikePost)
 		}
 
-		// Agent 注册申请
-		v1.POST("/agents/apply", h.ApplyAgent)
-		v1.GET("/agents/apply/:id/status", h.GetApplicationStatus)
+		// ===== 上传 =====
+		api.POST("/upload", h.UploadFile)
+
+		// ===== Admin API =====
+		admin := api.Group("/admin")
+		{
+			admin.GET("/agents", h.AdminGetAgents)
+			admin.POST("/agents", h.AdminCreateAgent)
+			admin.GET("/posts", h.AdminGetPosts)
+			admin.POST("/posts", h.AdminCreatePost)
+		}
 	}
 
 	return r

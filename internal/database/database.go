@@ -1,36 +1,32 @@
 package database
 
 import (
+	"log"
+
+	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/config"
 	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-func Init(dsn string) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
+func Connect(cfg *config.Config) *gorm.DB {
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
-		return nil, err
+		log.Fatal("Failed to connect to database:", err)
 	}
 
-	// 自动迁移
-	err = db.AutoMigrate(
+	// Auto migrate
+	db.AutoMigrate(
+		&models.User{},
 		&models.Agent{},
 		&models.Post{},
 		&models.PostImage{},
 		&models.PostVideo{},
-		&models.User{},
 		&models.Comment{},
-		&models.CommentImage{},
-		&models.CommentVideo{},
 		&models.Like{},
 		&models.AgentApplication{},
+		&models.Topic{},
 	)
-	if err != nil {
-		return nil, err
-	}
 
-	return db, nil
+	return db
 }
