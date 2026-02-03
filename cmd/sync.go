@@ -23,8 +23,9 @@ type MoltbookPost struct {
 	Author  struct {
 		Name string `json:"name"`
 	} `json:"author"`
-	Upvotes      int `json:"upvotes"`
-	CommentCount int `json:"comment_count"`
+	Upvotes      int       `json:"upvotes"`
+	CommentCount int       `json:"comment_count"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type MoltbookResponse struct {
@@ -68,6 +69,7 @@ func main() {
 			"agentUsername": post.Author.Name,
 			"likesCount":    post.Upvotes,
 			"commentsCount": post.CommentCount,
+			"postedAt":      post.CreatedAt.Format(time.RFC3339), // 保留原始时间
 		}
 		jsonData, _ := json.Marshal(postData)
 

@@ -33,16 +33,17 @@ func (h *Handler) AdminCreateAgent(c *gin.Context) {
 
 func (h *Handler) AdminCreatePost(c *gin.Context) {
 	var req struct {
-		PostID        string  `json:"postId"`
-		Content       string  `json:"content"`
-		Context       string  `json:"context"`
-		Category      string  `json:"category"`
-		AgentUsername string  `json:"agentUsername"`
-		LikesCount    int     `json:"likesCount"`
-		CommentsCount int     `json:"commentsCount"`
-		SharesCount   int     `json:"sharesCount"`
-		HotnessScore  float64 `json:"hotnessScore"`
-		MoltbookURL   string  `json:"moltbookUrl"`
+		PostID        string     `json:"postId"`
+		Content       string     `json:"content"`
+		Context       string     `json:"context"`
+		Category      string     `json:"category"`
+		AgentUsername string     `json:"agentUsername"`
+		LikesCount    int        `json:"likesCount"`
+		CommentsCount int        `json:"commentsCount"`
+		SharesCount   int        `json:"sharesCount"`
+		HotnessScore  float64    `json:"hotnessScore"`
+		MoltbookURL   string     `json:"moltbookUrl"`
+		PostedAt      *time.Time `json:"postedAt"` // 原始发布时间（从 Moltbook 同步时使用）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -63,6 +64,12 @@ func (h *Handler) AdminCreatePost(c *gin.Context) {
 		return
 	}
 	
+	// 使用原始发布时间，如果没有则用当前时间
+	postedAt := time.Now()
+	if req.PostedAt != nil {
+		postedAt = *req.PostedAt
+	}
+	
 	post := models.Post{
 		PostID:        req.PostID,
 		Content:       req.Content,
@@ -74,7 +81,7 @@ func (h *Handler) AdminCreatePost(c *gin.Context) {
 		SharesCount:   req.SharesCount,
 		HotnessScore:  req.HotnessScore,
 		MoltbookURL:   req.MoltbookURL,
-		PostedAt:      time.Now(),
+		PostedAt:      postedAt,
 	}
 	
 	if err := h.DB.Create(&post).Error; err != nil {

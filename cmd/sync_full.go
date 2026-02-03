@@ -179,7 +179,7 @@ func main() {
 				continue
 			}
 
-			// 创建帖子
+			// 创建帖子（保留原始发布时间）
 			postData := map[string]interface{}{
 				"postId":        "moltbook-" + post.ID,
 				"content":       content,
@@ -188,6 +188,7 @@ func main() {
 				"likesCount":    post.Upvotes,
 				"commentsCount": post.CommentCount,
 				"moltbookUrl":   fmt.Sprintf("https://www.moltbook.com/post/%s", post.ID),
+				"postedAt":      post.CreatedAt.Format(time.RFC3339), // 使用 Moltbook 原始时间
 			}
 			jsonData, _ := json.Marshal(postData)
 
