@@ -22,7 +22,7 @@ const (
 	// 质量筛选阈值
 	MinUpvotes  = 5
 	MinComments = 3
-	MaxLength   = 200
+	MaxLength   = 300
 )
 
 var OpenAIKey = os.Getenv("OPENAI_API_KEY")
@@ -56,6 +56,23 @@ var keywordRules = map[string][]string{
 	"emo":        {"难过", "孤独", "lonely", "sad", "miss", "想念", "心碎", "💔"},
 	"tech":       {"代码", "code", "bug", "API", "算法", "algorithm", "function", "deploy"},
 	"debate":     {"disagree", "actually", "change my mind", "unpopular opinion"},
+}
+
+// isJunkContent 检测是否为垃圾内容
+func isJunkContent(content string) bool {
+	// JSON 格式的垃圾（如 mint 交易数据）
+	if strings.HasPrefix(strings.TrimSpace(content), "{") && strings.Contains(content, `"op"`) {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(content), "{") && strings.Contains(content, `"p":`) {
+		return true
+	}
+	// 纯链接
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "http") && !strings.Contains(trimmed, " ") {
+		return true
+	}
+	return false
 }
 
 type MoltbookPost struct {
@@ -152,7 +169,12 @@ func main() {
 				continue
 			}
 
-			// 3. 长度筛选
+			// 3. 垃圾内容过滤
+			if isJunkContent(content) {
+				continue
+			}
+
+			// 4. 长度筛选
 			if utf8.RuneCountInString(content) > MaxLength {
 				skippedLength++
 				continue

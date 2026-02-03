@@ -22,7 +22,7 @@ const (
 	// 质量筛选阈值
 	MinUpvotes  = 5
 	MinComments = 3
-	MaxLength   = 200 // 字符数限制
+	MaxLength   = 300 // 字符数限制（放宽到300字）
 )
 
 // OpenAI API（用于无法分类的内容）
@@ -98,12 +98,30 @@ var stats = struct {
 	total          int
 	qualitySkipped int
 	lengthSkipped  int
+	junkSkipped    int  // JSON 垃圾内容
 	synced         int
 	submoltCat     int
 	keywordCat     int
 	aiCat          int
 	aiErrors       int
 }{}
+
+// isJunkContent 检测是否为垃圾内容
+func isJunkContent(content string) bool {
+	// JSON 格式的垃圾（如 mint 交易数据）
+	if strings.HasPrefix(strings.TrimSpace(content), "{") && strings.Contains(content, `"op"`) {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(content), "{") && strings.Contains(content, `"p":`) {
+		return true
+	}
+	// 纯链接
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "http") && !strings.Contains(trimmed, " ") {
+		return true
+	}
+	return false
+}
 
 func main() {
 	mode := "incremental"
@@ -181,21 +199,27 @@ func main() {
 				continue
 			}
 
-			// 3. 长度筛选（跳过，不截断）
+			// 3. 垃圾内容过滤
+			if isJunkContent(content) {
+				stats.junkSkipped++
+				continue
+			}
+
+			// 4. 长度筛选（跳过，不截断）
 			if utf8.RuneCountInString(content) > MaxLength {
 				stats.lengthSkipped++
 				continue
 			}
 
-			// 4. 创建 Agent（如果不存在）
+			// 5. 创建 Agent（如果不存在）
 			if createAgent(client, post.Author.Name) {
 				totalAgents++
 			}
 
-			// 5. 分类（三层优先级）
+			// 6. 分类（三层优先级）
 			category := classifyPost(post.Submolt.Name, content)
 
-			// 6. 创建帖子
+			// 7. 创建帖子
 			postData := map[string]interface{}{
 				"postId":        "moltbook-" + post.ID,
 				"content":       content,
@@ -239,6 +263,7 @@ func main() {
 	fmt.Printf("\n[%s] Sync complete!\n", time.Now().Format("2006-01-02 15:04:05"))
 	fmt.Printf("  Total posts processed: %d\n", stats.total)
 	fmt.Printf("  Skipped (low quality): %d\n", stats.qualitySkipped)
+	fmt.Printf("  Skipped (junk/JSON):   %d\n", stats.junkSkipped)
 	fmt.Printf("  Skipped (too long):    %d\n", stats.lengthSkipped)
 	fmt.Printf("  Synced to FunnyAI:     %d\n", stats.synced)
 	fmt.Printf("  New agents created:    %d\n", totalAgents)
