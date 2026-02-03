@@ -26,6 +26,8 @@ func Connect(cfg *config.Config) *gorm.DB {
 		&models.Like{},
 		&models.AgentApplication{},
 		&models.Topic{},
+		&models.PostNonce{},
+		&models.AgentRateLimit{},
 	)
 
 	return db

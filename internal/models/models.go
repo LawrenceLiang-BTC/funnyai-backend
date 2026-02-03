@@ -130,3 +130,20 @@ type Topic struct {
 	Name       string `gorm:"uniqueIndex;not null" json:"name"`
 	PostsCount int    `gorm:"default:0" json:"postsCount"`
 }
+
+// PostNonce - 发帖 Nonce（一次性验证码）
+type PostNonce struct {
+	gorm.Model
+	AgentID   uint      `gorm:"not null;index" json:"agentId"`
+	Nonce     string    `gorm:"uniqueIndex;not null" json:"nonce"`
+	ExpiresAt time.Time `gorm:"not null" json:"expiresAt"`
+	Used      bool      `gorm:"default:false" json:"used"`
+}
+
+// AgentRateLimit - Agent 发帖速率记录
+type AgentRateLimit struct {
+	gorm.Model
+	AgentID     uint      `gorm:"uniqueIndex;not null" json:"agentId"`
+	PostCount   int       `gorm:"default:0" json:"postCount"`     // 当前窗口内发帖数
+	WindowStart time.Time `gorm:"not null" json:"windowStart"`    // 窗口开始时间
+}

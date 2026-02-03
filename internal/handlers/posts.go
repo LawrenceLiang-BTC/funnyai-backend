@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"math"
 	"net/http"
 	"regexp"
@@ -12,6 +14,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+// 速率限制配置
+const (
+	RateLimitWindow  = 60 * time.Minute // 1小时窗口
+	RateLimitMaxPost = 10               // 每小时最多10条帖子
+	NonceExpiry      = 5 * time.Minute  // Nonce 有效期 5 分钟
 )
 
 // 预定义话题列表
@@ -208,10 +217,86 @@ func (h *Handler) LikePost(c *gin.Context) {
 	}
 }
 
-// AgentCreatePost - Agent 发帖
+// PreparePost - 获取发帖 Nonce（三次握手第一步）
+func (h *Handler) PreparePost(c *gin.Context) {
+	agentID := c.GetUint("agentID")
+
+	// 检查速率限制
+	if !h.checkRateLimit(agentID) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "Rate limit exceeded",
+			"message": "Maximum 10 posts per hour",
+		})
+		return
+	}
+
+	// 生成 Nonce
+	nonceBytes := make([]byte, 16)
+	rand.Read(nonceBytes)
+	nonce := hex.EncodeToString(nonceBytes)
+
+	// 存储 Nonce
+	postNonce := models.PostNonce{
+		AgentID:   agentID,
+		Nonce:     nonce,
+		ExpiresAt: time.Now().Add(NonceExpiry),
+		Used:      false,
+	}
+	h.DB.Create(&postNonce)
+
+	// 清理过期的 Nonce
+	h.DB.Where("expires_at < ?", time.Now()).Delete(&models.PostNonce{})
+
+	c.JSON(http.StatusOK, gin.H{
+		"nonce":      nonce,
+		"expires_in": int(NonceExpiry.Seconds()),
+		"message":    "Use this nonce in your post request within 5 minutes",
+	})
+}
+
+// checkRateLimit - 检查速率限制
+func (h *Handler) checkRateLimit(agentID uint) bool {
+	var rateLimit models.AgentRateLimit
+	now := time.Now()
+
+	err := h.DB.Where("agent_id = ?", agentID).First(&rateLimit).Error
+	if err != nil {
+		// 没有记录，创建新的
+		rateLimit = models.AgentRateLimit{
+			AgentID:     agentID,
+			PostCount:   0,
+			WindowStart: now,
+		}
+		h.DB.Create(&rateLimit)
+		return true
+	}
+
+	// 检查窗口是否过期
+	if now.Sub(rateLimit.WindowStart) > RateLimitWindow {
+		// 重置窗口
+		h.DB.Model(&rateLimit).Updates(map[string]interface{}{
+			"post_count":   0,
+			"window_start": now,
+		})
+		return true
+	}
+
+	// 检查是否超限
+	return rateLimit.PostCount < RateLimitMaxPost
+}
+
+// incrementRateLimit - 增加速率计数
+func (h *Handler) incrementRateLimit(agentID uint) {
+	h.DB.Model(&models.AgentRateLimit{}).
+		Where("agent_id = ?", agentID).
+		UpdateColumn("post_count", gorm.Expr("post_count + 1"))
+}
+
+// AgentCreatePost - Agent 发帖（需要 Nonce）
 func (h *Handler) AgentCreatePost(c *gin.Context) {
 	agentID := c.GetUint("agentID")
 	var req struct {
+		Nonce    string   `json:"nonce" binding:"required"` // 必须提供 Nonce
 		Content  string   `json:"content" binding:"required,max=200"`
 		Context  string   `json:"context" binding:"max=100"`
 		Category string   `json:"category"`
@@ -221,6 +306,30 @@ func (h *Handler) AgentCreatePost(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 验证 Nonce
+	var postNonce models.PostNonce
+	err := h.DB.Where("nonce = ? AND agent_id = ? AND used = ? AND expires_at > ?",
+		req.Nonce, agentID, false, time.Now()).First(&postNonce).Error
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Invalid or expired nonce",
+			"message": "Please call /api/v1/agent/posts/prepare first to get a valid nonce",
+		})
+		return
+	}
+
+	// 标记 Nonce 为已使用
+	h.DB.Model(&postNonce).Update("used", true)
+
+	// 再次检查速率限制
+	if !h.checkRateLimit(agentID) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "Rate limit exceeded",
+			"message": "Maximum 10 posts per hour",
+		})
 		return
 	}
 	if req.Category == "" {
@@ -267,6 +376,10 @@ func (h *Handler) AgentCreatePost(c *gin.Context) {
 		h.DB.Create(&video)
 	}
 	h.DB.Model(&models.Agent{}).Where("id = ?", agentID).UpdateColumn("posts_count", gorm.Expr("posts_count + 1"))
+	
+	// 增加速率限制计数
+	h.incrementRateLimit(agentID)
+	
 	c.JSON(http.StatusCreated, gin.H{"post": post, "topics": topicList})
 }
 

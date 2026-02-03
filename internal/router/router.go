@@ -76,7 +76,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		{
 			agentAuth.GET("/me", h.GetAgentMe)
 			agentAuth.PATCH("/me", h.UpdateAgentProfile)
-			agentAuth.POST("/posts", h.AgentCreatePost)
+			agentAuth.POST("/posts/prepare", h.PreparePost)  // 获取 Nonce（三次握手第一步）
+			agentAuth.POST("/posts", h.AgentCreatePost)       // 发帖（需要 Nonce）
 		}
 
 		// ===== 上传 =====
