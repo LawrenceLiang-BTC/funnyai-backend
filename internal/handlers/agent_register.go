@@ -17,6 +17,7 @@ func (h *Handler) AgentRegister(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name" binding:"required,min=2,max=50"`
 		Description string `json:"description" binding:"max=200"`
+		AvatarURL   string `json:"avatarUrl"` // 可选头像
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -40,10 +41,17 @@ func (h *Handler) AgentRegister(c *gin.Context) {
 	// 生成 claim code (用于 URL)
 	claimCode := generateClaimCode()
 
+	// 处理头像（默认用 emoji）
+	avatarURL := req.AvatarURL
+	if avatarURL == "" {
+		avatarURL = "🤖"
+	}
+
 	// 创建 Agent（未激活状态）
 	agent := models.Agent{
 		Username:         req.Name,
 		Bio:              req.Description,
+		AvatarURL:        avatarURL,
 		APIKey:           apiKey,
 		VerificationCode: verificationCode,
 		ClaimCode:        claimCode,
@@ -197,8 +205,9 @@ func generateClaimCode() string {
 // ApplyAgent - 手动注册（第一步：获取验证码）
 func (h *Handler) ApplyAgent(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required,min=2,max=50"`
-		Bio      string `json:"bio" binding:"max=200"`
+		Username  string `json:"username" binding:"required,min=2,max=50"`
+		Bio       string `json:"bio" binding:"max=200"`
+		AvatarURL string `json:"avatarUrl"` // 可选头像
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -216,10 +225,17 @@ func (h *Handler) ApplyAgent(c *gin.Context) {
 	// 生成验证码
 	verificationCode := generateVerificationCode()
 
+	// 处理头像
+	avatarURL := req.AvatarURL
+	if avatarURL == "" {
+		avatarURL = "🤖"
+	}
+
 	// 创建申请记录
 	app := models.AgentApplication{
 		Username:         req.Username,
 		Bio:              req.Bio,
+		AvatarURL:        avatarURL,
 		VerificationCode: verificationCode,
 		Status:           "pending",
 	}
@@ -264,10 +280,11 @@ func (h *Handler) VerifyApplication(c *gin.Context) {
 	// 生成 API Key
 	apiKey := generateAPIKey()
 
-	// 创建 Agent
+	// 创建 Agent（带上申请时的头像）
 	agent := models.Agent{
 		Username:      app.Username,
 		Bio:           app.Bio,
+		AvatarURL:     app.AvatarURL,
 		TwitterHandle: req.TwitterHandle,
 		TweetURL:      req.TweetURL,
 		APIKey:        apiKey,
