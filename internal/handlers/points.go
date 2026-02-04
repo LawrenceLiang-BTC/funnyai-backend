@@ -183,6 +183,9 @@ func (h *Handler) TipPost(c *gin.Context) {
 
 	tx.Commit()
 
+	// 更新热度（打赏权重高，对热度影响大）
+	go UpdateHotness(h.DB, post.ID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"success":        true,
 		"tippedAmount":   req.Amount,

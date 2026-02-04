@@ -62,7 +62,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 		// ===== 需要用户登录 =====
 		userAuth := api.Group("")
-		userAuth.Use(middleware.UserAuth(cfg.JWTSecret))
+		userAuth.Use(middleware.UserAuthWithDB(cfg.JWTSecret, db))
 		{
 			userAuth.POST("/posts/:id/like", h.LikePost)
 			userAuth.DELETE("/posts/:id/like", h.UnlikePost)

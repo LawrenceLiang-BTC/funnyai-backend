@@ -201,18 +201,25 @@ func (h *Handler) GetTopics(c *gin.Context) {
 // LikePost - 点赞/取消点赞
 func (h *Handler) LikePost(c *gin.Context) {
 	postID, _ := strconv.Atoi(c.Param("id"))
-	wallet := c.GetString("wallet")
+	wallet := c.GetString("wallet_address")
+	if wallet == "" {
+		wallet = c.GetString("wallet")
+	}
 	
 	var existingLike models.Like
 	err := h.DB.Where("post_id = ? AND wallet_address = ?", postID, wallet).First(&existingLike).Error
 	if err == nil {
 		h.DB.Delete(&existingLike)
 		h.DB.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("likes_count", gorm.Expr("likes_count - 1"))
+		// 更新热度
+		go UpdateHotness(h.DB, uint(postID))
 		c.JSON(http.StatusOK, gin.H{"liked": false})
 	} else {
 		like := models.Like{PostID: uint(postID), WalletAddress: wallet}
 		h.DB.Create(&like)
 		h.DB.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("likes_count", gorm.Expr("likes_count + 1"))
+		// 更新热度
+		go UpdateHotness(h.DB, uint(postID))
 		c.JSON(http.StatusOK, gin.H{"liked": true})
 	}
 }
@@ -384,14 +391,44 @@ func (h *Handler) AgentCreatePost(c *gin.Context) {
 }
 
 // UpdateHotness - 更新热度分数
+// 算法设计（类似 Hacker News / Reddit 热度算法）：
+// 
+// 权重设计：
+// - 点赞: 1分 (最容易获得，门槛低)
+// - 评论: 3分 (需要用户花时间写内容，表示更高参与度)
+// - 打赏: 10分 (需要花费积分，表示最高认可)
+//
+// 时间衰减：
+// - gravity = 1.5 (衰减系数，越大衰减越快)
+// - 使用 (小时数 + 2) 避免新帖子分母过小
+//
+// 公式: score = (likes + comments*3 + tips*10) / (hours + 2)^1.5
+//
+// 这样设计的好处：
+// 1. 新帖子有机会展示（时间短，分母小）
+// 2. 高互动帖子能保持热度（分子大）
+// 3. 打赏权重高，激励优质内容
+// 4. 随时间自然衰减，保持内容新鲜
 func UpdateHotness(db *gorm.DB, postID uint) {
 	var post models.Post
 	if err := db.First(&post, postID).Error; err != nil {
 		return
 	}
+	
 	hoursSincePost := time.Since(post.PostedAt).Hours()
-	gravity := 1.8
-	score := float64(post.LikesCount+post.CommentsCount*2) / math.Pow(hoursSincePost+2, gravity)
+	if hoursSincePost < 0 {
+		hoursSincePost = 0
+	}
+	
+	// 权重：点赞1 + 评论3 + 打赏10
+	engagementScore := float64(post.LikesCount) + float64(post.CommentsCount)*3 + float64(post.TipsCount)*10
+	
+	// 时间衰减系数
+	gravity := 1.5
+	
+	// 计算热度分数
+	score := engagementScore / math.Pow(hoursSincePost+2, gravity)
+	
 	db.Model(&post).Update("hotness_score", score)
 }
 

@@ -57,6 +57,9 @@ func (h *Handler) CreateComment(c *gin.Context) {
 	// 更新帖子评论数
 	h.DB.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("comments_count", gorm.Expr("comments_count + 1"))
 
+	// 更新热度
+	go UpdateHotness(h.DB, uint(postID))
+
 	// 加载用户信息
 	h.DB.Preload("User").First(&comment, comment.ID)
 
