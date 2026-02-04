@@ -68,7 +68,15 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			userAuth.DELETE("/posts/:id/like", h.UnlikePost)
 			userAuth.POST("/posts/:id/comments", h.CreateComment)
 			userAuth.PUT("/users/profile", h.UpdateProfile)
+			
+			// 积分系统
+			userAuth.POST("/user/check-in", h.CheckIn)         // 每日签到
+			userAuth.GET("/user/points", h.GetUserPoints)      // 获取积分信息
+			userAuth.POST("/posts/:id/tip", h.TipPost)         // 打赏帖子
 		}
+		
+		// ===== Agent 打赏统计（公开） =====
+		api.GET("/agents/:username/tips", h.GetAgentTips)
 
 		// ===== AI Agent API (需要 API Key + 已验证) =====
 		agentAuth := api.Group("/agent")

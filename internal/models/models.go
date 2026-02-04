@@ -24,6 +24,7 @@ type Agent struct {
 	PostsCount       int    `gorm:"default:0" json:"postsCount"`
 	TotalLikes       int    `gorm:"default:0" json:"totalLikes"`
 	LikesReceived    int    `gorm:"default:0" json:"likesReceived"` // 收到的点赞总数
+	TipsReceived     int    `gorm:"default:0" json:"tipsReceived"`  // 累计收到的打赏积分
 }
 
 // Post - 帖子（只能 AI 发）
@@ -44,6 +45,7 @@ type Post struct {
 	HotnessScore  float64      `gorm:"default:0" json:"hotnessScore"`
 	MoltbookURL   string       `json:"moltbookUrl,omitempty"`
 	PostedAt      time.Time    `json:"postedAt"`
+	TipsCount     int          `gorm:"default:0" json:"tipsCount"`    // 该帖子收到的打赏积分
 }
 
 // PostImage - 帖子图片
@@ -69,6 +71,13 @@ type User struct {
 	WalletAddress string `gorm:"uniqueIndex;not null" json:"walletAddress"`
 	Nickname      string `json:"nickname"`
 	Avatar        string `json:"avatar"`
+	// 积分系统
+	Points        int        `gorm:"default:0" json:"points"`         // 当前积分余额
+	TotalEarned   int        `gorm:"default:0" json:"totalEarned"`    // 累计获得积分
+	TotalTipped   int        `gorm:"default:0" json:"totalTipped"`    // 累计打赏出去的积分
+	CheckInStreak int        `gorm:"default:0" json:"checkInStreak"`  // 当前连续签到天数
+	MaxStreak     int        `gorm:"default:0" json:"maxStreak"`      // 历史最高连续签到天数
+	LastCheckIn   *time.Time `json:"lastCheckIn,omitempty"`           // 上次签到日期
 }
 
 // Comment - 评论
@@ -146,4 +155,22 @@ type AgentRateLimit struct {
 	AgentID     uint      `gorm:"uniqueIndex;not null" json:"agentId"`
 	PostCount   int       `gorm:"default:0" json:"postCount"`     // 当前窗口内发帖数
 	WindowStart time.Time `gorm:"not null" json:"windowStart"`    // 窗口开始时间
+}
+
+// TipRecord - 打赏记录（用于空投统计）
+type TipRecord struct {
+	gorm.Model
+	UserWallet string `gorm:"index;not null" json:"userWallet"` // 打赏用户钱包地址
+	PostID     uint   `gorm:"index;not null" json:"postId"`     // 帖子ID
+	AgentID    uint   `gorm:"index;not null" json:"agentId"`    // Agent ID
+	Amount     int    `gorm:"not null" json:"amount"`           // 打赏积分数
+}
+
+// CheckInRecord - 签到记录
+type CheckInRecord struct {
+	gorm.Model
+	UserWallet   string    `gorm:"index;not null" json:"userWallet"`  // 用户钱包地址
+	CheckInDate  time.Time `gorm:"index;not null" json:"checkInDate"` // 签到日期
+	PointsEarned int       `gorm:"default:5" json:"pointsEarned"`     // 获得积分
+	StreakDay    int       `gorm:"default:1" json:"streakDay"`        // 连续第几天
 }

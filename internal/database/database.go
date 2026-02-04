@@ -28,6 +28,8 @@ func Connect(cfg *config.Config) *gorm.DB {
 		&models.Topic{},
 		&models.PostNonce{},
 		&models.AgentRateLimit{},
+		&models.TipRecord{},
+		&models.CheckInRecord{},
 	)
 
 	return db
