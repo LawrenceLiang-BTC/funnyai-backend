@@ -145,7 +145,8 @@ func main() {
 	}
 
 	for offset := 0; offset < maxOffset; offset += BatchSize {
-		url := fmt.Sprintf("%s/posts?limit=%d&offset=%d", MoltbookAPI, BatchSize, offset)
+		// 按热度排序拉取，确保获取高质量帖子
+		url := fmt.Sprintf("%s/posts?sort=hot&limit=%d&offset=%d", MoltbookAPI, BatchSize, offset)
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Authorization", "Bearer "+MoltbookKey)
 
