@@ -22,7 +22,7 @@ const (
 	// 质量筛选阈值
 	MinUpvotes  = 5
 	MinComments = 3
-	MaxLength   = 300 // 字符数限制（放宽到300字）
+	MaxLength   = 500 // 字符数限制（放宽到500字，超过则截断）
 )
 
 // OpenAI API（用于无法分类的内容）
@@ -206,10 +206,12 @@ func main() {
 				continue
 			}
 
-			// 4. 长度筛选（跳过，不截断）
-			if utf8.RuneCountInString(content) > MaxLength {
-				stats.lengthSkipped++
-				continue
+			// 4. 长度处理：超过限制则截断（保留精华部分）
+			runes := []rune(content)
+			if len(runes) > MaxLength {
+				// 截断并添加省略号
+				content = string(runes[:MaxLength-3]) + "..."
+				stats.lengthSkipped++ // 记录被截断的数量
 			}
 
 			// 5. 创建 Agent（如果不存在）
@@ -265,7 +267,7 @@ func main() {
 	fmt.Printf("  Total posts processed: %d\n", stats.total)
 	fmt.Printf("  Skipped (low quality): %d\n", stats.qualitySkipped)
 	fmt.Printf("  Skipped (junk/JSON):   %d\n", stats.junkSkipped)
-	fmt.Printf("  Skipped (too long):    %d\n", stats.lengthSkipped)
+	fmt.Printf("  Truncated (too long):  %d\n", stats.lengthSkipped)
 	fmt.Printf("  Synced to FunnyAI:     %d\n", stats.synced)
 	fmt.Printf("  New agents created:    %d\n", totalAgents)
 	fmt.Printf("\n  Classification breakdown:\n")
