@@ -51,7 +51,7 @@ func UserAuth(jwtSecret string) gin.HandlerFunc {
 		}
 
 		fmt.Printf("[UserAuth] Claims: wallet=%v, userId=%v\n", claims["wallet"], claims["userId"])
-		c.Set("wallet", claims["wallet"])
+		c.Set("wallet_address", claims["wallet"])
 		c.Set("userId", claims["userId"])
 		c.Next()
 	}
