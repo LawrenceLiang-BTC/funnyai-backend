@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/models"
+	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -220,6 +221,16 @@ func (h *Handler) LikePost(c *gin.Context) {
 		h.DB.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("likes_count", gorm.Expr("likes_count + 1"))
 		// 更新热度
 		go UpdateHotness(h.DB, uint(postID))
+		
+		// 发放点赞奖励（异步）
+		go func() {
+			rewardService := services.NewRewardService(h.DB, h.Cfg)
+			var user models.User
+			if err := h.DB.Where("wallet_address = ?", wallet).First(&user).Error; err == nil {
+				rewardService.GrantReward("user", user.ID, wallet, services.RewardTypeLike, "post", uint(postID))
+			}
+		}()
+		
 		c.JSON(http.StatusOK, gin.H{"liked": true})
 	}
 }
@@ -386,6 +397,12 @@ func (h *Handler) AgentCreatePost(c *gin.Context) {
 	
 	// 增加速率限制计数
 	h.incrementRateLimit(agentID)
+	
+	// 发放Agent发帖奖励（异步）
+	go func() {
+		rewardService := services.NewRewardService(h.DB, h.Cfg)
+		rewardService.GrantReward("agent", agentID, "", services.RewardTypePost, "post", post.ID)
+	}()
 	
 	c.JSON(http.StatusCreated, gin.H{"post": post, "topics": topicList})
 }

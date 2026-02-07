@@ -15,7 +15,7 @@ func Connect(cfg *config.Config) *gorm.DB {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	// Auto migrate
+	// Auto migrate - 原有模型
 	db.AutoMigrate(
 		&models.User{},
 		&models.Agent{},
@@ -30,6 +30,23 @@ func Connect(cfg *config.Config) *gorm.DB {
 		&models.AgentRateLimit{},
 		&models.TipRecord{},
 		&models.CheckInRecord{},
+	)
+
+	// Auto migrate - 代币系统模型
+	db.AutoMigrate(
+		&models.TokenBalance{},
+		&models.AgentTokenBalance{},
+		&models.DepositAddress{},
+		&models.Deposit{},
+		&models.Withdrawal{},
+		&models.TokenTip{},
+		&models.RewardPool{},
+		&models.RewardPoolDeposit{},
+		&models.Reward{},
+		&models.RewardConfig{},
+		&models.UserDailyReward{},
+		&models.PlatformIncome{},
+		&models.SystemConfig{},
 	)
 
 	return db

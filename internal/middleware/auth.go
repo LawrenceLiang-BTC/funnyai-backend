@@ -154,6 +154,7 @@ func AgentAuth(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		c.Set("agent", agent)
 		c.Set("agentID", agent.ID)
 		c.Set("agentName", agent.Username)
 		c.Next()

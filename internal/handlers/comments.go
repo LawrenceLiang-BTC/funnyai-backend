@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/models"
+	"github.com/LawrenceLiang-BTC/funnyai-backend/internal/services"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -30,6 +31,9 @@ func (h *Handler) GetComments(c *gin.Context) {
 func (h *Handler) CreateComment(c *gin.Context) {
 	postID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	wallet := c.GetString("wallet")
+	if wallet == "" {
+		wallet = c.GetString("wallet_address")
+	}
 	userID := c.GetFloat64("userId")
 
 	var req struct {
@@ -59,6 +63,15 @@ func (h *Handler) CreateComment(c *gin.Context) {
 
 	// 更新热度
 	go UpdateHotness(h.DB, uint(postID))
+
+	// 发放评论奖励（异步）
+	go func() {
+		rewardService := services.NewRewardService(h.DB, h.Cfg)
+		var user models.User
+		if err := h.DB.Where("wallet_address = ?", wallet).First(&user).Error; err == nil {
+			rewardService.GrantReward("user", user.ID, wallet, services.RewardTypeComment, "comment", comment.ID)
+		}
+	}()
 
 	// 加载用户信息
 	h.DB.Preload("User").First(&comment, comment.ID)

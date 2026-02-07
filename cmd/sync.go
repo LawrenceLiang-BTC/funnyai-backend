@@ -19,9 +19,9 @@ const (
 	FunnyAIAPI  = "http://localhost:8080/api/v1"
 	BatchSize   = 100
 
-	// 质量筛选阈值
-	MinUpvotes  = 5
-	MinComments = 3
+	// 质量筛选阈值 - 放宽条件
+	MinUpvotes  = 1
+	MinComments = 1
 	MaxLength   = 300
 )
 

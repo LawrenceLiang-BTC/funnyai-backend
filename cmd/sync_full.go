@@ -18,10 +18,10 @@ const (
 	FunnyAIAPI  = "http://localhost:8080/api/v1"
 	BatchSize   = 100
 
-	// 质量筛选阈值
-	MinUpvotes  = 5
-	MinComments = 3
-	MaxLength   = 500 // 字符数限制（放宽到500字，超过则截断）
+	// 质量筛选阈值 - 放宽条件以获取更多内容
+	MinUpvotes  = 1  // 降低到 1，只过滤完全没人点赞的
+	MinComments = 1  // 降低到 1
+	MaxLength   = 300 // 字符数限制，超过则跳过
 )
 
 // OpenAI API（用于无法分类的内容）
@@ -122,6 +122,20 @@ func isJunkContent(content string) bool {
 	return false
 }
 
+// cleanControlChars 清理 JSON 中的控制字符
+func cleanControlChars(data []byte) []byte {
+	result := make([]byte, 0, len(data))
+	for _, b := range data {
+		// 保留正常字符，替换控制字符（除了 \t \n \r）
+		if b >= 32 || b == '\t' || b == '\n' || b == '\r' {
+			result = append(result, b)
+		} else {
+			result = append(result, ' ')
+		}
+	}
+	return result
+}
+
 func main() {
 	mode := "incremental"
 	if len(os.Args) > 1 && os.Args[1] == "full" {
@@ -138,14 +152,14 @@ func main() {
 	maxEmptyRetries := 5
 
 	// offset=0 开始，每次跳过 BatchSize 条
-	maxOffset := 2000 // 增量模式
+	maxOffset := 10000 // 增量模式 - 增加到 10000
 	if mode == "full" {
-		maxOffset = 200000 // 全量模式
+		maxOffset = 170000 // 全量模式 - Moltbook 总共约 165000 条
 	}
 
 	for offset := 0; offset < maxOffset; offset += BatchSize {
-		// 按热度排序拉取，确保获取高质量帖子
-		url := fmt.Sprintf("%s/posts?sort=hot&limit=%d&offset=%d", MoltbookAPI, BatchSize, offset)
+		// 按时间排序拉取，确保获取所有帖子
+		url := fmt.Sprintf("%s/posts?sort=new&limit=%d&offset=%d", MoltbookAPI, BatchSize, offset)
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Authorization", "Bearer "+MoltbookKey)
 
@@ -162,8 +176,11 @@ func main() {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
+		// 清理控制字符，避免 JSON 解析失败
+		cleanBody := cleanControlChars(body)
+
 		var data MoltbookResponse
-		if err := json.Unmarshal(body, &data); err != nil {
+		if err := json.Unmarshal(cleanBody, &data); err != nil {
 			fmt.Printf("Failed to parse response at offset %d: %v\n", offset, err)
 			continue
 		}
@@ -205,12 +222,11 @@ func main() {
 				continue
 			}
 
-			// 4. 长度处理：超过限制则截断（保留精华部分）
+			// 4. 长度筛选：超过限制则跳过（不截断）
 			runes := []rune(content)
 			if len(runes) > MaxLength {
-				// 截断并添加省略号
-				content = string(runes[:MaxLength-3]) + "..."
-				stats.lengthSkipped++ // 记录被截断的数量
+				stats.lengthSkipped++
+				continue
 			}
 
 			// 5. 创建 Agent（如果不存在）
