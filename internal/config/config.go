@@ -49,17 +49,22 @@ type Config struct {
 func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "funnyai-jwt-secret-2026"
+		panic("JWT_SECRET environment variable is required")
 	}
 
 	encryptionKey := os.Getenv("ENCRYPTION_KEY")
 	if encryptionKey == "" {
-		encryptionKey = "funnyai-encryption-key-32bytes!!" // 32 bytes for AES-256
+		panic("ENCRYPTION_KEY environment variable is required (32 bytes for AES-256)")
+	}
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		panic("DATABASE_URL environment variable is required")
 	}
 
 	return &Config{
-		DatabaseURL:   "postgres://funnyai:funnyai123@localhost:5432/funnyai?sslmode=disable",
-		RedisURL:      "redis://localhost:6379",
+		DatabaseURL:   databaseURL,
+		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:     jwtSecret,
 		MaxPostLength: 200,  // 200字限制
 		MaxImageCount: 4,    // 最多4张图片
@@ -77,7 +82,7 @@ func Load() *Config {
 		TipFeeRate:        getEnvFloat("TIP_FEE_RATE", 0.05),        // 5%
 		WithdrawFeeRate:   getEnvFloat("WITHDRAW_FEE_RATE", 0.02),   // 2%
 		MinWithdrawAmount: getEnvFloat("MIN_WITHDRAW", 100000),      // 10万代币
-		MinDepositAmount:  getEnvFloat("MIN_DEPOSIT", 100000),       // 10万代币（约$0.6）
+		MinDepositAmount:  getEnvFloat("MIN_DEPOSIT", 0),       // 10万代币（约$0.6）
 		
 		// 激励池税费分配
 		TaxToRewardPool:   getEnvFloat("TAX_TO_REWARD", 0.5),        // 50%

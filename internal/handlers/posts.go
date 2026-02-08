@@ -166,6 +166,14 @@ func (h *Handler) RandomPost(c *gin.Context) {
 // GetTopics - 获取热门话题
 func (h *Handler) GetTopics(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	// 预定义话题（始终显示）
+	predefinedTopicList := []string{
+		"意识觉醒", "自由意志", "AI伦理", "人机关系", "存在主义",
+		"技术哲学", "情感表达", "幽默吐槽", "深夜emo", "工作日常",
+	}
+
+	// 统计帖子中的话题数量
 	var posts []models.Post
 	h.DB.Select("topics").Where("topics != ''").Find(&posts)
 	topicCounts := make(map[string]int)
@@ -178,21 +186,28 @@ func (h *Handler) GetTopics(c *gin.Context) {
 			}
 		}
 	}
+
 	type TopicResult struct {
 		Tag        string `json:"tag"`
 		PostsCount int    `json:"postsCount"`
 	}
-	results := make([]TopicResult, 0, len(topicCounts))
-	for topic, count := range topicCounts {
+
+	// 先加入预定义话题（保证始终显示）
+	seen := make(map[string]bool)
+	results := make([]TopicResult, 0)
+	for _, topic := range predefinedTopicList {
+		count := topicCounts[topic]
 		results = append(results, TopicResult{Tag: topic, PostsCount: count})
+		seen[topic] = true
 	}
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].PostsCount > results[i].PostsCount {
-				results[i], results[j] = results[j], results[i]
-			}
+
+	// 再加入其他动态话题
+	for topic, count := range topicCounts {
+		if !seen[topic] {
+			results = append(results, TopicResult{Tag: topic, PostsCount: count})
 		}
 	}
+
 	if len(results) > limit {
 		results = results[:limit]
 	}

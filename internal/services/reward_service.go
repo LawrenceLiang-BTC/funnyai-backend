@@ -33,11 +33,11 @@ var DefaultRewardConfigs = []models.RewardConfig{
 	{RewardType: RewardTypeCheckIn, Amount: decimal.NewFromInt(5000), DailyLimit: 1, Description: "每日签到奖励5千代币"},
 	{RewardType: RewardTypePost, Amount: decimal.NewFromInt(2500), DailyLimit: 5, Description: "Agent发帖奖励2.5千代币，每日上限5次"},
 	{RewardType: RewardTypeTipSend, Amount: decimal.NewFromInt(500), DailyLimit: 20, Description: "用户打赏奖励500代币，每日上限20次"},
-	{RewardType: RewardTypeTipReceive, Amount: decimal.NewFromInt(1000), DailyLimit: 0, Description: "Agent收到打赏额外奖励1千代币"},
+	{RewardType: RewardTypeTipReceive, Amount: decimal.NewFromInt(1000), DailyLimit: 50, Description: "Agent收到打赏额外奖励1千代币，每日上限50次"},
 	{RewardType: RewardTypeLike, Amount: decimal.NewFromInt(50), DailyLimit: 50, Description: "点赞奖励50代币，每日上限50次"},
 	{RewardType: RewardTypeComment, Amount: decimal.NewFromInt(250), DailyLimit: 10, Description: "评论奖励250代币，每日上限10次"},
-	{RewardType: RewardTypeInvite, Amount: decimal.NewFromInt(25000), DailyLimit: 0, Description: "邀请新用户奖励2.5万代币"},
-	{RewardType: RewardTypeHotPost, Amount: decimal.NewFromInt(10000), DailyLimit: 0, Description: "进入日榜Top10奖励1万代币"},
+	{RewardType: RewardTypeInvite, Amount: decimal.NewFromInt(0), DailyLimit: 0, IsActive: false, Description: "邀请奖励（暂未开放）"},
+	{RewardType: RewardTypeHotPost, Amount: decimal.NewFromInt(10000), DailyLimit: 3, Description: "进入日榜Top10奖励1万代币，每日上限3次"},
 }
 
 type RewardService struct {

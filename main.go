@@ -38,6 +38,7 @@ func main() {
 		} else {
 			ctx, cancel := context.WithCancel(context.Background())
 			go tokenService.StartDepositWatcher(ctx)
+			go tokenService.StartWithdrawalProcessor(ctx)
 			
 			// 优雅关闭
 			go func() {
@@ -48,6 +49,7 @@ func main() {
 			}()
 			
 			log.Println("✅ Token deposit watcher started")
+			log.Println("✅ Token withdrawal processor started")
 		}
 	}
 

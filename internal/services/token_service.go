@@ -553,6 +553,44 @@ func (s *TokenService) confirmWithdrawal(userType string, userID uint, walletAdd
 	}
 }
 
+// StartWithdrawalProcessor 启动提现自动处理（在单独goroutine中运行）
+func (s *TokenService) StartWithdrawalProcessor(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second) // 每30秒检查一次
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Withdrawal processor stopped")
+			return
+		case <-ticker.C:
+			s.processPendingWithdrawals()
+		}
+	}
+}
+
+// processPendingWithdrawals 处理所有pending状态的提现
+func (s *TokenService) processPendingWithdrawals() {
+	if s.cfg.PlatformPrivateKey == "" {
+		return // 没有私钥，跳过
+	}
+
+	var withdrawals []models.Withdrawal
+	if err := s.db.Where("status = ?", "pending").Order("created_at asc").Limit(10).Find(&withdrawals).Error; err != nil {
+		log.Printf("Failed to get pending withdrawals: %v", err)
+		return
+	}
+
+	for _, w := range withdrawals {
+		log.Printf("Processing withdrawal #%d: %s to %s", w.ID, w.NetAmount.String(), w.WalletAddress)
+		if err := s.ProcessWithdrawal(w.ID); err != nil {
+			log.Printf("Failed to process withdrawal #%d: %v", w.ID, err)
+		} else {
+			log.Printf("Withdrawal #%d completed", w.ID)
+		}
+	}
+}
+
 // ==================== 充值监听 ====================
 
 // StartDepositWatcher 启动充值监听（在单独goroutine中运行）
